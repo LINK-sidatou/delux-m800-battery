@@ -1,4 +1,5 @@
 __pycache__/
 *.pyc
 error.log
+run.log
 .venv/

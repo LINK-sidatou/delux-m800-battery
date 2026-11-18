@@ -23,6 +23,15 @@ STARTUP_DIR = os.path.join(
 )
 STARTUP_LINK = os.path.join(STARTUP_DIR, "DELUX鼠标电量.vbs")
 
+# 原生崩溃（非 Python 异常）也留个现场
+try:
+    import faulthandler
+
+    _fault_fh = open(os.path.join(APP_DIR, "run.log"), "a", buffering=1, encoding="utf-8")
+    faulthandler.enable(_fault_fh)
+except Exception:
+    pass
+
 GREEN = (46, 160, 67)
 AMBER = (220, 145, 20)
 RED = (200, 55, 50)
@@ -124,6 +133,7 @@ def loop(icon):
             import traceback
 
             _log("loop error: " + traceback.format_exc())
+        _log(f"刷新完成 online={state['online']} level={state['level']}")
         stop_flag.wait(interval["sec"])
 
 
@@ -156,16 +166,21 @@ def quit_app(icon, item):
     icon.stop()
 
 
+LOG_PATH = os.path.join(APP_DIR, "run.log")
+
+
 def _log(msg):
     try:
-        with open(os.path.join(APP_DIR, "error.log"), "a", encoding="utf-8") as f:
-            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} [{os.getpid()}] {msg}\n")
     except Exception:
         pass
 
 
 def main():
+    _log("启动 (pythonw=%s)" % sys.executable.endswith("pythonw.exe"))
     refresh()
+    _log(f"首次读取: online={state['online']} level={state['level']}")
     icon = pystray.Icon(
         "delux_m800_battery",
         make_icon(),
@@ -193,8 +208,10 @@ def main():
             pystray.MenuItem("退出", quit_app),
         ),
     )
+    _log("托盘图标已创建")
     threading.Thread(target=loop, args=(icon,), daemon=True).start()
     icon.run()
+    _log("icon.run() 返回，进程退出")
 
 
 if __name__ == "__main__":
