@@ -1,4 +1,5 @@
-' 启动 DELUX 鼠标电量托盘（无控制台窗口）
+' Launch the DELUX mouse battery tray without a console window.
+' Keep this file in the same folder as tray.pyw (it locates tray.pyw by its own path).
 Set fso = CreateObject("Scripting.FileSystemObject")
 dir = fso.GetParentFolderName(WScript.ScriptFullName)
 

@@ -4,7 +4,6 @@
 """
 
 import os
-import shutil
 import sys
 import threading
 import time
@@ -17,11 +16,11 @@ from mouse_battery import read_battery  # noqa: E402
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LAUNCHER = os.path.join(APP_DIR, "启动托盘.vbs")
-STARTUP_DIR = os.path.join(
-    os.environ.get("APPDATA", ""),
-    r"Microsoft\Windows\Start Menu\Programs\Startup",
-)
-STARTUP_LINK = os.path.join(STARTUP_DIR, "DELUX鼠标电量.vbs")
+
+# 开机自启走注册表 Run 项（比「启动」文件夹里的 vbs 可靠，wscript 可能被策略拦）
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_NAME = "DELUX鼠标电量"
+MUTEX_NAME = "Local\\delux_m800_battery_tray"
 
 # 原生崩溃（非 Python 异常）也留个现场
 try:
@@ -145,19 +144,36 @@ def set_interval(sec):
     return _inner
 
 
+def _launch_cmd():
+    """当前解释器 + tray.pyw 的命令行，写进 Run 项用。"""
+    exe = sys.executable
+    if exe.lower().endswith("python.exe"):
+        exe = exe[:-len("python.exe")] + "pythonw.exe"
+    return f'"{exe}" "{os.path.join(APP_DIR, "tray.pyw")}"'
+
+
 def autostart_enabled():
-    return os.path.exists(STARTUP_LINK)
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            winreg.QueryValueEx(k, RUN_NAME)
+        return True
+    except Exception:
+        return False
 
 
 def toggle_autostart(icon, item):
     try:
-        if autostart_enabled():
-            os.remove(STARTUP_LINK)
-        else:
-            os.makedirs(STARTUP_DIR, exist_ok=True)
-            shutil.copy2(LAUNCHER, STARTUP_LINK)
-    except Exception:
-        pass
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_ALL_ACCESS) as k:
+            if autostart_enabled():
+                winreg.DeleteValue(k, RUN_NAME)
+            else:
+                winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, _launch_cmd())
+    except Exception as e:
+        _log(f"切换自启失败: {e}")
     return autostart_enabled()
 
 
@@ -214,7 +230,30 @@ def main():
     _log("icon.run() 返回，进程退出")
 
 
+_guard = None
+
+
+def _single_instance():
+    """开机自启 + 手动双击可能同时触发，用本地端口占用保证只有一个实例。"""
+    global _guard
+    try:
+        import socket
+
+        s = socket.socket()
+        s.bind(("127.0.0.1", 49983))
+        s.listen(1)
+        _guard = s
+        return True
+    except OSError:
+        return False
+    except Exception:
+        return True
+
+
 if __name__ == "__main__":
+    if not _single_instance():
+        _log("已有实例在运行，本次启动退出")
+        sys.exit(0)
     try:
         main()
     except Exception:
